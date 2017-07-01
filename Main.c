@@ -7,10 +7,17 @@
 
 //(Virtual address) - (base address) = RVA
 
+unsigned long rvaToOfsset(void *ModuleData, unsigned long rva) {
+	return (unsigned char*)ModuleData + rva;
+}
+
 void dumpDataDirectories(IMAGE_DATA_DIRECTORY* dirs, unsigned char* imageBase, int size){
 	int i = 0;
 	printf("%-24s%-12s%-12s\n", "Name", "Address", "Size");
 	for (; i < size - 1; i++) {
+		if (dirs[i].VirtualAddress <= 0) {
+			continue;
+		}
 		printf("%-24s%-12p%-6d%-6s\n", SECTION_NAMES[i], imageBase + dirs[i].VirtualAddress, dirs[i].Size, "bytes");
 	}
 	printf("\n");
@@ -24,7 +31,7 @@ void dumpStackAndHeapInfo(IMAGE_OPTIONAL_HEADER* OptionalHeader){
 	printf("\n");
 }
 
-void dumpSectionData(IMAGE_SECTION_HEADER* sections, unsigned long baseOfFile, unsigned char* imageBase) {
+void dumpSectionData(IMAGE_SECTION_HEADER* sections, unsigned char* baseOfFile, unsigned char* imageBase) {
 	int i = 0;
 	printf("%-12s%-24s%-24s%-24s%-16s\n", "Name", "Physical Address", "Virtual Address", "Pointer Raw Data", "Size Raw Data");
 	for (; i < 10; i++) {
@@ -35,11 +42,15 @@ void dumpSectionData(IMAGE_SECTION_HEADER* sections, unsigned long baseOfFile, u
 	printf("\n");
 }
 
-void dumpImportTable(IMAGE_IMPORT_DESCRIPTOR* importTableAddr, int size, unsigned char* imageBase) {
+void dumpImportTable(IMAGE_IMPORT_DESCRIPTOR* importTableAddr, unsigned char* imageBase) {
 	int i = 0;
-	size /= sizeof(IMAGE_IMPORT_DESCRIPTOR);
-	for (; i < size; i++) {
-		printf("File using dll rva of name: %p\n", importTableAddr[i].Name);
+	while(1){
+		if (!importTableAddr[i].TimeDateStamp && !importTableAddr[i].FirstThunk &&
+			!importTableAddr[i].Name && !importTableAddr[i].ForwarderChain) {
+			break;
+		}
+		i++;
+		printf("File using dll rva: %p of name: %p\n", importTableAddr[i].Name, rvaToOfsset(imageBase, importTableAddr[i].Name));
 	}
 }
 
@@ -98,15 +109,14 @@ int main(int argc, char** argv) {
 
 	printf("[DEBUG] Code starts: %p\n", imageBase + ntHeader->OptionalHeader.BaseOfCode);
 	printf("[DEBUG] Data starts: %p\n", imageBase + ntHeader->OptionalHeader.BaseOfData);
-
+	printf("[DEBUG] Physical image base location: %p\n", physicalImageBase);
 	sections = (PIMAGE_SECTION_HEADER)((unsigned char*) ntHeader + FIELD_OFFSET(IMAGE_NT_HEADERS, OptionalHeader) + ntHeader->FileHeader.SizeOfOptionalHeader);
 
 	dumpStackAndHeapInfo(&ntHeader->OptionalHeader);
 	dumpDataDirectories(ntHeader->OptionalHeader.DataDirectory, physicalImageBase, ntHeader->OptionalHeader.NumberOfRvaAndSizes);
 	dumpSectionData(sections, physicalImageBase, imageBase);
 
-	dumpImportTable(physicalImageBase + ntHeader->OptionalHeader.DataDirectory[1].VirtualAddress,
-		ntHeader->OptionalHeader.DataDirectory[1].Size, physicalImageBase);
+	dumpImportTable(rvaToOfsset(physicalImageBase, ntHeader->OptionalHeader.DataDirectory[12].VirtualAddress), physicalImageBase);
 
 	system("Pause");
 	free(fileData);
