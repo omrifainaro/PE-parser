@@ -7,8 +7,14 @@
 
 //(Virtual address) - (base address) = RVA
 
-unsigned long rvaToOfsset(void *ModuleData, unsigned long rva) {
-	return (unsigned char*)ModuleData + rva;
+unsigned long vaToOfsset(IMAGE_NT_HEADERS *ntHeader, unsigned long va) {
+	IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(ntHeader);
+	int i = 0;
+	for (; i < ntHeader->FileHeader.NumberOfSections; i++) {
+		if (sections[i].VirtualAddress <= va && sections[i].VirtualAddress + sections[i].SizeOfRawData >= va) {
+			return sections[i].PointerToRawData;
+		}
+	}
 }
 
 void dumpDataDirectories(IMAGE_DATA_DIRECTORY* dirs, unsigned char* imageBase, int size){
@@ -45,12 +51,11 @@ void dumpSectionData(IMAGE_SECTION_HEADER* sections, unsigned char* baseOfFile, 
 void dumpImportTable(IMAGE_IMPORT_DESCRIPTOR* importTableAddr, unsigned char* imageBase) {
 	int i = 0;
 	while(1){
-		if (!importTableAddr[i].TimeDateStamp && !importTableAddr[i].FirstThunk &&
-			!importTableAddr[i].Name && !importTableAddr[i].ForwarderChain) {
+		if (importTableAddr[i].Name == 0) { //&& importTableAddr[i].FirstThunk == 0) {
 			break;
 		}
+		printf("File using dll rva: %p of name: %s\n", importTableAddr[i].Name, imageBase + importTableAddr[i].Name);
 		i++;
-		printf("File using dll rva: %p of name: %p\n", importTableAddr[i].Name, rvaToOfsset(imageBase, importTableAddr[i].Name));
 	}
 }
 
@@ -116,7 +121,7 @@ int main(int argc, char** argv) {
 	dumpDataDirectories(ntHeader->OptionalHeader.DataDirectory, physicalImageBase, ntHeader->OptionalHeader.NumberOfRvaAndSizes);
 	dumpSectionData(sections, physicalImageBase, imageBase);
 
-	dumpImportTable(rvaToOfsset(physicalImageBase, ntHeader->OptionalHeader.DataDirectory[12].VirtualAddress), physicalImageBase);
+	dumpImportTable(physicalImageBase + vaToOfsset(ntHeader, ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress), physicalImageBase);
 
 	system("Pause");
 	free(fileData);
