@@ -7,12 +7,12 @@
 
 //(Virtual address) - (base address) = RVA
 
-unsigned long vaToOfsset(IMAGE_NT_HEADERS *ntHeader, unsigned long va) {
+unsigned long rvaToOffset(IMAGE_NT_HEADERS *ntHeader, unsigned long rva) {
 	IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(ntHeader);
 	int i = 0;
 	for (; i < ntHeader->FileHeader.NumberOfSections; i++) {
-		if (sections[i].VirtualAddress <= va && sections[i].VirtualAddress + sections[i].SizeOfRawData >= va) {
-			return sections[i].PointerToRawData;
+		if (sections[i].VirtualAddress <= rva && sections[i].VirtualAddress + sections[i].SizeOfRawData >= rva) {
+			return rva - (sections[i].VirtualAddress - sections[i].PointerToRawData);
 		}
 	}
 }
@@ -48,13 +48,14 @@ void dumpSectionData(IMAGE_SECTION_HEADER* sections, unsigned char* baseOfFile, 
 	printf("\n");
 }
 
-void dumpImportTable(IMAGE_IMPORT_DESCRIPTOR* importTableAddr, unsigned char* imageBase) {
+void dumpImportTable(IMAGE_NT_HEADERS* ntHeader, IMAGE_IMPORT_DESCRIPTOR* importTableAddr, unsigned char* imageBase) {
 	int i = 0;
 	while(1){
 		if (importTableAddr[i].Name == 0) { //&& importTableAddr[i].FirstThunk == 0) {
 			break;
 		}
-		printf("File using dll rva: %p of name: %s\n", importTableAddr[i].Name, imageBase + importTableAddr[i].Name);
+		
+		printf("File using dll rva: %08x of name: %s  <>  offset is %08x\n", importTableAddr[i].Name, imageBase + rvaToOffset(ntHeader, importTableAddr[i].Name), rvaToOffset(ntHeader, importTableAddr[i].Name));
 		i++;
 	}
 }
@@ -121,7 +122,7 @@ int main(int argc, char** argv) {
 	dumpDataDirectories(ntHeader->OptionalHeader.DataDirectory, physicalImageBase, ntHeader->OptionalHeader.NumberOfRvaAndSizes);
 	dumpSectionData(sections, physicalImageBase, imageBase);
 
-	dumpImportTable(physicalImageBase + vaToOfsset(ntHeader, ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress), physicalImageBase);
+	dumpImportTable(ntHeader, physicalImageBase + rvaToOffset(ntHeader, ntHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress), physicalImageBase);
 
 	system("Pause");
 	free(fileData);
